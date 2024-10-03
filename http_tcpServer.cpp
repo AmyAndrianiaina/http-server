@@ -5,6 +5,8 @@
 #include <fstream>
 #include <unistd.h>
 
+#include "http_parser.hpp"
+
 namespace
 {
     const int BUFFER_SIZE = 30720;
@@ -26,8 +28,7 @@ namespace http
     TcpServer::TcpServer(std::string ip_address, int port)
         : m_ip_address(ip_address), m_port(port), m_socket(),
           m_new_socket(), m_incoming_message(), m_socket_address(),
-          m_socket_address_len(sizeof(m_socket_address)),
-          m_server_message(buildResponse())
+          m_socket_address_len(sizeof(m_socket_address))
     {
         m_socket_address.sin_family = AF_INET;
         m_socket_address.sin_port = htons(m_port);
@@ -100,11 +101,17 @@ namespace http
             {
                 exitWithError("Failed to read bytes from client socket connection");
             }
+            
+            Parser& parser = Parser::getParser();
+            Info info = parser.parse(buffer, bytesReceived);
+            info.print();
 
             std::ostringstream ss;
             ss << "------ Received Request from client ------\n\n";
             ss << buffer;
             log(ss.str());
+
+            processRequest(info);
             
             sendResponse();
 
@@ -128,7 +135,7 @@ namespace http
 
     std::string TcpServer::buildResponse()
     {
-        return buildResponseFromFile();
+        return buildResponseFromFile("html/index.html");
     }
 
     std::string TcpServer::buildResponseFromString()
@@ -141,9 +148,9 @@ namespace http
         return ss.str();
     }
 
-    std::string TcpServer::buildResponseFromFile()
+    std::string TcpServer::buildResponseFromFile(const std::string& filePath)
     {
-        std::ifstream file("html/index.html");
+        std::ifstream file("./" + filePath);
         if (!file.is_open()) {
             return "HTTP/1.1 404 Not Found\nContent-Type: text/plain\nContent-Length: 13\n\n404 Not Found";
         }
@@ -173,5 +180,21 @@ namespace http
         {
             log("Error sending response to client");
         }
+    }
+
+    void TcpServer::processRequest(const Info &info)
+    {
+
+        if (info.getMethod() == http::METHOD::GET) {
+            if (info.getUrl() == "/") {
+                m_server_message = buildResponse();
+                return;
+            }
+            m_server_message = buildResponseFromFile(info.getUrl());
+        } else if (info.getMethod() == http::METHOD::POST) {
+            // manage post request
+        }
+
+        // manage unprocessable methods
     }
 }

@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string>
 
+#include "http_parser.hpp"
+
 namespace http
 {
     class TcpServer
@@ -31,8 +33,9 @@ namespace http
             void acceptConnection(int new_socket);
             std::string buildResponse();
             std::string buildResponseFromString();
-            std::string buildResponseFromFile();
+            std::string buildResponseFromFile(const std::string& filePath);
             void sendResponse();
+            void processRequest(const Info& info);
     };
 }
 

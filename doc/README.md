@@ -1,3 +1,7 @@
+Client Server Model in Linux
+
+![plot](media/client-server-linux.png)
+
 http_tcpServer.cpp
 
 - In constructor:
@@ -15,4 +19,3 @@ Then listen is called:
     - print http data
     - return response with **write**
     - **close** the new socket
-
