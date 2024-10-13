@@ -10,6 +10,8 @@ namespace http
         public:
             static Parser& getParser();
             Info parse(const char* data, int size);
+            const static std::string notFoundResponse();
+            const static std::string successResponse(const std::string& content, int size);
         
         private:
             Parser();

@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string>
 
-#include "http_parser.hpp"
+#include "../parser/http_parser.hpp"
 
 namespace http
 {
@@ -30,12 +30,21 @@ namespace http
 
             int startServer();
             void closeServer();
+            void listenToConnection();
+            std::pair<const char*, int> readConnectionPacket();
+            Info parseHttpRequest(std::pair<const char*, int>);
             void acceptConnection(int new_socket);
-            std::string buildResponse();
+            std::string welcomeResponse();
+            std::pair<const std::string, const std::string> getFileContentAndMimeType(std::ifstream& file, const std::string& filePath);
+            std::string notFoundResponse();
             std::string buildResponseFromString();
             std::string buildResponseFromFile(const std::string& filePath);
             void sendResponse();
             void processRequest(const Info& info);
+
+            const std::string getServerInfo() const;
+            const std::string getRequestInfo(const char* buffer) const;
+            const std::string processPhp(const std::string filePath) const;
     };
 }
 

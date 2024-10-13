@@ -3,37 +3,39 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <filesystem>
 #include <unistd.h>
+#include <unordered_map>
 
-#include "http_parser.hpp"
-
-namespace
-{
-    const int BUFFER_SIZE = 30720;
-
-    void log(const std::string& message)
-    {
-        std::cout << message << std::endl;
-    }
-
-    void exitWithError(const std::string& errorMessage)
-    {
-        log("ERROR: " + errorMessage);
-        exit(1);
-    }
-}
+#include "../response/http_response.hpp"
+#include "../helper/LogHelper.hpp"
 
 namespace http
 {
+    /**
+     * Max Read Buffer size
+     */
+    const int BUFFER_SIZE = 30720;
+
+    /**
+     * Max connection request size
+     */
+    const int CONNECTION_REQUEST_SIZE = 20;
+
+    /**
+     * TCP Server constructor
+     */
     TcpServer::TcpServer(std::string ip_address, int port)
         : m_ip_address(ip_address), m_port(port), m_socket(),
           m_new_socket(), m_incoming_message(), m_socket_address(),
           m_socket_address_len(sizeof(m_socket_address))
     {
+        // building socket address
         m_socket_address.sin_family = AF_INET;
         m_socket_address.sin_port = htons(m_port);
         m_socket_address.sin_addr.s_addr = inet_addr(m_ip_address.c_str());
         
+        // starting server
         if(startServer() != 0)
         {
             std::ostringstream ss;
@@ -42,11 +44,20 @@ namespace http
         }
     }
 
+    /**
+     * TPC Server desctructor
+     */
     TcpServer::~TcpServer()
     {
         closeServer();
     }
 
+    /**
+     * Start Server
+     * 
+     * Open socket
+     * Bind to socket address
+     */
     int TcpServer::startServer()
     {
         m_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -66,6 +77,12 @@ namespace http
         return 0;
     }
 
+    /**
+     * Close Server
+     * 
+     * Close all sockets
+     * Exit
+     */
     void TcpServer::closeServer()
     {
         close(m_socket);
@@ -73,19 +90,67 @@ namespace http
         exit(0);
     }
 
-    void TcpServer::startListen()
+    /**
+     * Get Server Info in string
+     */
+    const std::string TcpServer::getServerInfo() const
     {
-        if (listen(m_socket, 20) < 0) 
-        {
-            exitWithError("Socket listen failed");
-        }
-
         std::ostringstream ss;
         ss << "\n*** Listening on ADDRESS: "
             << inet_ntoa(m_socket_address.sin_addr)
             << " PORT: " << ntohs(m_socket_address.sin_port)
             << " ***\n\n";
-        log(ss.str());
+
+        return ss.str();
+    }
+
+
+    /**
+     * Get Request Info in string
+     */
+    const std::string TcpServer::getRequestInfo(const char* buffer) const
+    {
+        std::ostringstream ss;
+        ss << "------ Received Request from client ------\n\n";
+        ss << buffer;
+        return ss.str();
+    }
+
+
+    void TcpServer::listenToConnection()
+    {
+        if (listen(m_socket, CONNECTION_REQUEST_SIZE) < 0)
+        {
+            exitWithError("Socket listen failed");
+        }
+    }
+
+    std::pair<const char*, int> TcpServer::readConnectionPacket()
+    {
+        char buffer[BUFFER_SIZE] {0};
+        int bytesReceived = read(m_new_socket, buffer, BUFFER_SIZE);
+
+        if (bytesReceived < 0)
+        {
+            exitWithError("Failed to read bytes from client socket connection");
+        }
+
+        return {buffer, bytesReceived};
+    } 
+
+    Info TcpServer::parseHttpRequest(std::pair<const char*, int> bufferInfo)
+    {
+        Info info = Parser::getParser().parse(bufferInfo.first, bufferInfo.second);
+        info.print();
+
+        return info;
+    }
+
+    void TcpServer::startListen()
+    {
+        listenToConnection();
+
+        log(getServerInfo());
 
         int bytesReceived;
 
@@ -94,22 +159,11 @@ namespace http
             log("====== Waiting for a new connection ======\n\n\n");
             acceptConnection(m_new_socket);
 
-            char buffer[BUFFER_SIZE] {0};
-            bytesReceived = read(m_new_socket, buffer, BUFFER_SIZE);
+            std::pair<const char*, int> bufferInfo = readConnectionPacket();
 
-            if(bytesReceived < 0)
-            {
-                exitWithError("Failed to read bytes from client socket connection");
-            }
-            
-            Parser& parser = Parser::getParser();
-            Info info = parser.parse(buffer, bytesReceived);
-            info.print();
+            Info info = parseHttpRequest(bufferInfo); 
 
-            std::ostringstream ss;
-            ss << "------ Received Request from client ------\n\n";
-            ss << buffer;
-            log(ss.str());
+            log(getRequestInfo(bufferInfo.first));
 
             processRequest(info);
             
@@ -133,39 +187,65 @@ namespace http
         }
     }
 
-    std::string TcpServer::buildResponse()
+    /**
+     * Default response from file
+     * TODO:
+     *  - naming function
+     */
+    std::string TcpServer::welcomeResponse()
     {
-        return buildResponseFromFile("html/index.html");
+        return buildResponseFromFile("html/welcome.html");
     }
 
+    /**
+     * Default response from string
+     */
     std::string TcpServer::buildResponseFromString()
     {
         std::string htmlFile = "<!DOCTYPE html><html lang=\"en\"><body><h1> HOME </h1><p> Hello from your Server :) </p></body></html>";
         std::ostringstream ss;
-        ss << "HTTP/1.1 200 OK\nContent-Type: text/html\nContent-Length: " << htmlFile.size() << "\n\n"
+        ss << "HTTP/1.1 200 \nContent-Type: text/html\nContent-Length: " << htmlFile.size() << "\n\n"
            << htmlFile;
 
         return ss.str();
     }
 
+    std::pair<const std::string, const std::string> TcpServer::getFileContentAndMimeType(std::ifstream& file, const std::string& filePath)
+    {
+        std::ostringstream ss;
+        ss << file.rdbuf();
+        
+        std::filesystem::path path = filePath;
+        const std::string ext = path.extension();
+
+        return {ss.str(), mimeTypes[ext]};
+    }
+
+    std::string TcpServer::notFoundResponse()
+    {
+        return buildResponseFromFile("html/404.html");
+    }
+
+    /**
+     * Build response from file
+     */
     std::string TcpServer::buildResponseFromFile(const std::string& filePath)
     {
         std::ifstream file("./" + filePath);
         if (!file.is_open()) {
-            return "HTTP/1.1 404 Not Found\nContent-Type: text/plain\nContent-Length: 13\n\n404 Not Found";
+            return notFoundResponse();
         }
+        
+        std::pair<const std::string, const std::string> fileContentAndMimeType = getFileContentAndMimeType(file, filePath);
 
-        std::ostringstream ss;
-        ss << file.rdbuf(); // read file content into the stringstream
-        std::string htmlFile = ss.str();
+        Response response(Response::OK, "OK", fileContentAndMimeType.second, fileContentAndMimeType.first);
 
-        std::ostringstream response;
-        response << "HTTP/1.1 200 OK\nContent-Type: text/html\nContent-Length: " << htmlFile.size() << "\n\n"
-            << htmlFile;
-
-        return response.str();
+        return response.get();
     }
 
+    /**
+     * Send Response
+     */
     void TcpServer::sendResponse()
     {
         long bytesSent;
@@ -175,6 +255,7 @@ namespace http
         if (bytesSent == m_server_message.size())
         {
             log("------ Server Response sent to client ------\n\n");
+            log(m_server_message + "\n\n");
         }
         else
         {
@@ -187,7 +268,7 @@ namespace http
 
         if (info.getMethod() == http::METHOD::GET) {
             if (info.getUrl() == "/") {
-                m_server_message = buildResponse();
+                m_server_message = welcomeResponse();
                 return;
             }
             m_server_message = buildResponseFromFile(info.getUrl());
@@ -195,6 +276,6 @@ namespace http
             // manage post request
         }
 
-        // manage unprocessable methods
+        // manage other unprocessable methods
     }
 }

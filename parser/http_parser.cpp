@@ -51,9 +51,20 @@ http::Info http::Parser::parse(const char *data, int size)
     return info;
 }
 
+const std::string http::Parser::notFoundResponse()
+{
+    return "HTTP/1.1 404\nContent-Type: text/plain\nContent-Length: 13\n\n404 Not Found";
+}
+
+const std::string http::Parser::successResponse(const std::string &content, int size)
+{
+    std::ostringstream response;
+    response << "HTTP/1.1 201\nContent-Type: text/html\nContent-Length: " << size << "\n\n"
+            << content;
+    return response.str();
+}
 
 http::Parser::Parser()
 {
     std::cout << "Construct Parser" << std::endl;
 }
-
