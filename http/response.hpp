@@ -1,6 +1,7 @@
 #ifndef HTTP_RESPONSE
 #define HTTP_RESPONSE
 
+#include <unordered_map>
 #include <string>
 #include <sstream>
 
